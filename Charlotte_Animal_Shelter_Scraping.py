@@ -5,11 +5,14 @@ import time
 import schedule
 import datetime
 import os
+import numpy
+
+
 
 def fetch_and_parse(url):
     try:
-        response = requests.get(url, timeout=10)  # Add a timeout for better error handling
-        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx and 5xx)
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
         return BeautifulSoup(response.text, 'html.parser')
     except requests.exceptions.HTTPError as http_err:
         print(f"HTTP error occurred: {http_err}")
@@ -18,7 +21,7 @@ def fetch_and_parse(url):
     return None
 
 def extract_data(soup):
-    if soup is None:  # Check if soup is None, which means an error occurred
+    if soup is None:
         return []
     dogs = soup.find_all('div', class_='gridResult')
     dog_list = []
@@ -61,19 +64,16 @@ def scrape_dog_data():
             break
 
         all_dogs.extend(new_dogs)
-        index += 30  # Increment index to fetch next page
-        time.sleep(1)  # Delay to prevent hitting the server too rapidly
+        index += 30
+        time.sleep(1)
 
     print(f"Total dogs fetched: {len(all_dogs)}")
 
     # Convert collected data to DataFrame
     dogs_at_shelter = pd.DataFrame(all_dogs)
 
-    # Add a column for the date the script ran
+    # Add column for the date the script ran
     dogs_at_shelter['Scrape Date'] = current_date
-
-    # Handling 'Age' by converting to numeric, coercing errors, and removing NaN values
-    dogs_at_shelter['Age'] = pd.to_numeric(dogs_at_shelter['Age'], errors='coerce')
 
     # Check if the CSV file exists
     csv_file = 'dogs_at_shelter.csv'
@@ -89,7 +89,7 @@ def scrape_dog_data():
         print(f"[{datetime.datetime.now()}] Data saved to '{csv_file}'.")
 
 def schedule_job():
-    # Schedule the job to run daily at 5:30 PM
+    # Schedule the job to run daily at 1 PM
     schedule.every().day.at("13:00").do(scrape_dog_data)
 
     print("Schedule started. Will scrape at 1pm daily...")
@@ -99,3 +99,5 @@ def schedule_job():
 
 if __name__ == '__main__':
     schedule_job()
+
+

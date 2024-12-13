@@ -1,0 +1,459 @@
+---
+title: "CMACC Insights"
+subtitle: "Analyzing Animal Shelter Data"
+author: "Victoria Pierce Crossland"
+format:
+  html:
+    theme: flatly
+    toc: true
+    title-block-banner-color: '#536C7C'
+
+
+---
+
+# About Me + Additional Context:
+I am a obsessive dog mom as well as a CMACC volunteer (that happens to be extremely curious and love Python). I enjoy spending my free time walking dogs at the shelter, and sometimes even convincing my husband to let me bring one home to foster. My goals from this project are to gather data from the shelter website (scraping daily to create a df of dogs coming in and out) and to dive into trends and insights. 
+
+
+
+## CMACC Website Scraping
+
+Initial Scrape
+```{python}
+# Set execute_scraping to False for quick rendering, True to run scraping
+execute_scraping = False
+
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import time
+import datetime
+import os
+
+def fetch_and_parse(url):
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return BeautifulSoup(response.text, 'html.parser')
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error occurred: {http_err}")
+    except requests.exceptions.RequestException as req_err:
+        print(f"Request error occurred: {req_err}")
+    return None
+
+def extract_data(soup):
+    if soup is None:
+        return []
+    dogs = soup.find_all('div', class_='gridResult')
+    dog_list = []
+    for dog in dogs:
+        try:
+            dog_list.append({
+                'Name': dog.find('span', class_='text_Name results').text.strip() if dog.find('span', class_='text_Name results') else 'N/A',
+                'Gender': dog.find('span', class_='text_Gender results').text.strip() if dog.find('span', class_='text_Gender results') else 'N/A',
+                'Breed': dog.find('span', class_='text_Breed results').text.strip() if dog.find('span', class_='text_Breed results') else 'N/A',
+                'Age': dog.find('span', class_='text_Age results').text.strip() if dog.find('span', class_='text_Age results') else 'N/A',
+                'Animal Type': dog.find('span', class_='text_Animaltype results').text.strip() if dog.find('span', class_='text_Animaltype results') else 'N/A',
+                'Weight': dog.find('span', class_='text_Weight results').text.strip() if dog.find('span', class_='text_Weight results') else 'N/A',
+                'Brought to Shelter': dog.find('span', class_='text_Broughttotheshelter results').text.strip() if dog.find('span', class_='text_Broughttotheshelter results') else 'N/A',
+                'Located At': dog.find('span', class_='text_Locatedat results').text.strip() if dog.find('span', class_='text_Locatedat results') else 'N/A',
+                'Kennel Location': dog.find('span', class_='text_KennelLocation results').text.strip() if dog.find('span', class_='text_KennelLocation results') else 'N/A',
+                'Qualified For': dog.find('span', class_='text_ViewType results').text.strip() if dog.find('span', class_='text_ViewType results') else 'N/A'
+            })
+        except AttributeError as e:
+            print(f"Error extracting data for one dog: {e}")
+    return dog_list
+
+def scrape_dog_data():
+    base_url = 'https://24petconnect.com/CLTAdopt'
+    index = 0
+    all_dogs = []
+    current_date = datetime.datetime.now().strftime('%Y-%m-%d')
+
+    while True:
+        current_url = f"{base_url}?index={index}&at=DOG"
+        print(f"[{datetime.datetime.now()}] Fetching data from index: {index}")
+        soup = fetch_and_parse(current_url)
+        new_dogs = extract_data(soup)
+        if not new_dogs:  # If no dogs found, assume end of data
+            print("No more dogs found. Exiting loop.")
+            break
+        all_dogs.extend(new_dogs)
+        index += 30
+        time.sleep(1)
+    
+    print(f"Total dogs fetched: {len(all_dogs)}")
+    dogs_at_shelter = pd.DataFrame(all_dogs)
+    dogs_at_shelter['Scrape Date'] = current_date
+
+    csv_file = 'dogs_at_shelter.csv'
+    if os.path.exists(csv_file):
+        existing_data = pd.read_csv(csv_file)
+        updated_data = pd.concat([existing_data, dogs_at_shelter], ignore_index=True)
+        updated_data.to_csv(csv_file, index=False)
+        print(f"[{datetime.datetime.now()}] Data appended to '{csv_file}'.")
+    else:
+        dogs_at_shelter.to_csv(csv_file, index=False)
+        print(f"[{datetime.datetime.now()}] Data saved to '{csv_file}'.")
+
+if execute_scraping:
+    scrape_dog_data()
+
+
+```
+
+### Schedule Daily Scrape
+
+##### I want to collect this data daily in order to be able to asses what dogs are coming in and out. In order to be able to render in Quarto, I will perform the schedule in another doc and read in the data here. Check out my GitHub to see my script to schedule the scrape!
+
+
+```{python}
+import pandas as pd
+import Charlotte_Animal_Shelter_Scraping
+
+dogs_at_shelter = pd.read_csv('dogs_at_shelter.csv')
+
+dogs_at_shelter = dogs_at_shelter.drop_duplicates()
+
+dogs_at_shelter.head()
+
+
+```
+
+## Data Wrangling
+
+#### Age is in months and years. Create a numeric variable.
+```{python}
+
+def convert_age_to_years(age):
+    if pd.isnull(age):  # Check if the age is NaN
+        return None
+    if isinstance(age, str):  # Ensure that the age is a string
+        if 'year' in age:
+            return int(age.split()[0])  # Extract the number of years
+        elif 'month' in age:
+            return int(age.split()[0]) / 12  # Convert months to years
+    return None  # Return None if age is not a string or doesn't contain 'year' or 'month'
+
+# Apply the updated function
+dogs_at_shelter['age_numeric'] = dogs_at_shelter['Age'].apply(convert_age_to_years)
+
+```
+
+#### Filling in Age for dogs still on site (age did not come through previously due to human error - let's fix it)!
+```{python}
+#dogs_at_shelter['Age'] = dogs_at_shelter.groupby('Name')['Age'].transform(lambda x: x.ffill().bfill())
+#dogs_at_shelter['age_numeric'] = dogs_at_shelter.groupby('Name')['age_numeric'].transform(lambda x: x.ffill().bfill())
+
+# Saving the DataFrame to a CSV file
+
+
+```
+
+##### Let's get Weight as a numeric variable!
+```{python}
+dogs_at_shelter['Weight_num'] = dogs_at_shelter['Weight'].str.extract(r'(\d+\.?\d*)').astype(float)
+```
+
+##### Rename Name column & separate into 'name' and 'id' columns
+```{python}
+
+# Renaming the column
+dogs_at_shelter.rename(columns={'Name': 'Name_ID'}, inplace=True)
+# Splitting the 'Name_ID' column into 'Name' and the ID part
+dogs_at_shelter['Name'] = dogs_at_shelter['Name_ID'].str.extract(r'([A-Za-z\s]+) \(')  # Extracts only the name part before the space and parenthesis
+dogs_at_shelter['ID'] = dogs_at_shelter['Name_ID'].str.extract(r'(\d+)')  # Extracts only the numeric part
+
+dogs_at_shelter.head()
+```
+
+##### As a CMACC Volunteer, I have the inside scoop on what the locations mean. I know the DoginCare Unit is at the larger Byrum location, as well as the ADPTPUP (puppy kennels) and LST units (Dogs found as a stray & on a 3 day hold so owners have a chance to reclaim). The Toomey location is the satellite location. I want to create a new variable that simplifies this location.
+
+```{python}
+import numpy as np
+
+dogs_at_shelter['location_simple'] = np.where(
+    dogs_at_shelter['Kennel Location'].str.contains('toom', case=False, na=False), 'Toomey',
+    np.where(
+        dogs_at_shelter['Kennel Location'].str.contains('CARE|LST|ADOPT|PUPPY|INTAKE|ADPT', case=False), 'Byrum',
+    np.where(
+        dogs_at_shelter['Kennel Location'].str.contains('Foster', case=False), 'Foster',
+         dogs_at_shelter['Kennel Location'])))
+
+```
+
+##### I also want to seperate out the Kennel Location vs Kennel Number. Kennel Name corresponds to what hallway the dog is located on, while the Kennel Number is the refers to the location on the hallway. Kennels are numbered in ascending. The Byrum location has a hallway with dogs on both sides, so I am also creating a variable that grabs the side of the kennel location. 
+
+```{python}
+dogs_at_shelter['kennel_name'] = dogs_at_shelter['Kennel Location'].str.extract(r'([A-Za-z\s]+)')  # Extracts only the name part before the space and parenthesis
+dogs_at_shelter['kennel_num'] = dogs_at_shelter['Kennel Location'].str.extract(r'(\d+)')  # Extracts only the numeric part
+dogs_at_shelter['side'] = dogs_at_shelter['Kennel Location'].apply(
+    lambda x: '' if 'FOSTER' in x or x[-1] not in ['R', 'L'] else x[-1])
+
+
+
+```
+
+##### Creating a Variable to count how long a dog has been in the shelter
+```{python}
+dogs_at_shelter['Brought to Shelter'] = pd.to_datetime(dogs_at_shelter['Brought to Shelter'])
+
+# Calculate 'Days_at_shelter'
+today = pd.to_datetime('today')
+dogs_at_shelter['Days_at_shelter'] = (today - dogs_at_shelter['Brought to Shelter']).dt.days
+
+dogs_at_shelter
+
+```
+## Top Level Highlights for Today
+
+##### What is the smallest dog? The largest? 
+
+```{python}
+from datetime import datetime
+
+
+today_date = datetime.today().strftime('%Y-%m-%d')
+current_dogs = dogs_at_shelter[dogs_at_shelter['Scrape Date'] == today_date]
+
+# Srape runs at 1pm. If running before then, default to most recent date in Scrape Date.
+if current_dogs.empty:
+    # Find the maximum date in the 'Scrape Date' column if no entry for today
+    max_date = dogs_at_shelter['Scrape Date'].max()
+    # Filter the DataFrame using the maximum date found
+    current_dogs = dogs_at_shelter[dogs_at_shelter['Scrape Date'] == max_date]
+
+
+
+max_date = current_dogs['Scrape Date'].max()
+print("CMACC Highlights:", max_date)
+gender_counts = current_dogs['Gender'].value_counts()
+
+female_count = gender_counts.get('Female', 0)
+male_count = gender_counts.get('Male', 0) 
+percent_male = male_count/(male_count+female_count)
+
+
+
+
+smallest_dog = current_dogs['Weight_num'].min()
+largest_dog = current_dogs['Weight_num'].max()
+print("Number of females:", female_count)
+print("Number of males:", male_count)
+print("{:.2f}%".format(percent_male * 100), "of dogs currently at the shelter are male")
+print("Smallest Dog:", smallest_dog, "pounds")
+print("Largest Dog:", largest_dog, "pounds")
+
+
+
+filtered_breeds = current_dogs[current_dogs['Breed'] != 'Breed information is not provided by this shelter']
+breed_counts = filtered_breeds['Breed'].value_counts().head(5)
+print("The 5 most found breeds currently at the shelter are:", breed_counts)
+
+
+
+location_counts = current_dogs['location_simple'].value_counts()
+print(location_counts)
+
+
+count_sick = current_dogs['Kennel Location'].str.contains('CARE').sum()
+print("There are", count_sick, "sick dogs in the Dogs In Care unit at Byrum.")
+
+
+dogs_located_at_shelter = current_dogs[current_dogs['Kennel Location'].str.contains('CARE|LST|ADOPT|TOOM')]
+max_days_in_shelter = dogs_located_at_shelter['Days_at_shelter'].max()
+
+longest_stay_dogs = dogs_located_at_shelter[dogs_located_at_shelter['Days_at_shelter'] == max_days_in_shelter]
+
+# Print the name(s) of the dog(s) with the longest stay
+print(longest_stay_dogs['Name'].tolist(), "has been at the shelter the longest at", max_days_in_shelter, "days.")
+
+```
+
+```{python}
+import matplotlib.pyplot as plt
+
+# Histogram of dog weights
+
+current_dogs['Weight_num'].plot(kind='hist', bins=10, edgecolor='black')
+plt.title('Distribution of Dog Weights Currently at Shelter')
+plt.xlabel('Weight (lbs)')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.show()
+
+```
+
+
+```{python}
+import matplotlib.pyplot as plt
+
+# Histogram of dog ages
+
+current_dogs['age_numeric'].plot(kind='hist', bins=10, edgecolor='black')
+plt.title('Distribution of Dog Ages Currently at Shelter')
+plt.xlabel('Age (Years)')
+plt.ylabel('Frequency')
+plt.tight_layout()
+plt.show()
+
+#Generally right skewed: Many more young dogs compared to older. 
+```
+
+```{python}
+import matplotlib.pyplot as plt
+
+# Plot 1: Bar chart: count of dogs by breed - top 5
+breed_counts.plot(kind='bar')
+plt.title('5 Most Common Dog Breeds Currently in Shelter')
+plt.xlabel('Breed')
+plt.ylabel('Count')
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+```
+
+
+```{python}
+import matplotlib.pyplot as plt
+
+top_breeds = breed_counts.index.tolist()  # Extract breed names for the top breeds
+filtered_counts = dogs_at_shelter[dogs_at_shelter['Breed'].isin(top_breeds)]
+gender_counts = filtered_counts.groupby(['Breed', 'Gender']).size().unstack(fill_value=0)
+
+# Ordering
+gender_counts['Total'] = gender_counts.sum(axis=1)
+gender_counts = gender_counts.sort_values(by='Total', ascending=False).drop(columns=['Total'])
+
+
+
+
+# Plotting the data
+ax = gender_counts.plot(kind='bar', color={'Male': '#89CFF0', 'Female': 'pink'})
+plt.title('Gender Split of Top 5 Dog Breeds in Shelter')
+plt.xlabel('Breed')
+plt.ylabel('Count')
+plt.xticks(rotation=45, ha='right')
+plt.legend(title='Gender')
+plt.tight_layout()
+plt.show()
+
+```
+
+
+### Shelter Capacity Concerns
+
+##### CMACC Shelter Contxt:  Unfortunately, the number of dogs in need of homes is not only outpacing the public's adoption rate - The number of dogs that are abandoned at the shelter is also surpassing the shelter's maximum capacity. When the shelter is over capacity, a plea goes out to volunteers and fosters to open up their homes, spread the word, and ultimately save CMACC from making heartbreaking decisions. 
+
+##### 
+
+```{python}
+
+# Grouping by Date and Location and counting the number of dogs
+dogs_grouped = dogs_at_shelter.groupby(['Scrape Date', 'location_simple']).size().unstack(fill_value=0)
+
+print(dogs_grouped)
+fig, ax = plt.subplots()
+dogs_grouped.plot(kind='bar', stacked=True, ax=ax)
+
+# Formatting the plot
+ax.set_title('Counts of Dogs by Location and Date', fontsize=14)
+ax.set_xlabel('Date', fontsize=12)
+ax.set_ylabel('Number of Dogs', fontsize=12)
+ax.legend(title='Location', bbox_to_anchor=(1.05, 1), loc='upper left')
+ax.tick_params(axis='x', rotation=45)
+
+# Adjust layout for better display
+plt.tight_layout()
+
+# Show the plot
+plt.show()
+
+```
+
+##### As much as we appreciate our Fosters, to look at shelter capacity concerns, I am going to filter them out
+```{python}
+at_shelter = dogs_at_shelter[dogs_at_shelter['location_simple'] != 'Foster']
+
+# Group by 'Scrape Date' and 'location_simple', then unstack
+dogs_grouped = at_shelter.groupby(['Scrape Date', 'location_simple']).size().unstack()
+
+
+# Show the resulting DataFrame
+print(dogs_grouped)
+
+
+#Plot
+fig, ax = plt.subplots()
+dogs_grouped.plot(kind='bar', stacked=True, ax=ax)
+
+ax.set_title('Counts of Dogs by Location and Date', fontsize=14)
+ax.set_xlabel('Date', fontsize=12)
+ax.set_ylabel('Number of Dogs', fontsize=12)
+ax.legend(title='Location', bbox_to_anchor=(1.05, 1), loc='upper left')
+ax.tick_params(axis='x', rotation=45)
+
+plt.tight_layout()
+
+plt.show()
+
+```
+
+## Send Myself A Warning Email if Capacity Gets Tight
+#### Currenly, the Foster Coordinator sends out a plea to volunteers when the shelter is over capacity. Let's automate that.
+
+
+
+
+```{python}
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from safepw import password
+
+##This would be more beneficial if it were scheduled, but for Quarto HTML rendering, I will comment it out
+#def send_email_if_necessary():
+
+
+# When space gets tight, they are able to transport dogs between the Byrum and Toomey locations, so I will be looking at the total between the two for capacity. 
+dogs_grouped['Total'] = dogs_grouped['Byrum'] + dogs_grouped['Toomey']
+dogs_grouped.head()
+
+# Check the latest date's total
+latest_total = dogs_grouped.iloc[-1]['Total']
+
+if latest_total > 130:
+    # Email details
+    sender_email = "vicpierce101@gmail.com"
+    receiver_email = "vicpierce101@gmail.com"
+    password = password  #Password in a secure space
+
+    # Set up the MIME
+    message = MIMEMultipart()
+    message['From'] = sender_email
+    message['To'] = receiver_email
+    message['Subject'] = 'Alert: High Dog Total at Shelter'
+    
+    body = f"The total count of dogs on the latest scrape date is {latest_total}, which is above max capacity. Beg your husband to go grab another foster."
+    message.attach(MIMEText(body, 'plain'))
+    
+    # SMTP session
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+
+        server.starttls()
+        server.login(sender_email, password)
+        text = message.as_string()
+        server.sendmail(sender_email, receiver_email, text)
+        server.quit()
+        print("Email sent successfully.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+else:
+    print("Total is not greater than 130, no email sent.")
+
+
+   # send_email_if_necessary()
+   # Above is commenting out the scheduling 
+```
+
