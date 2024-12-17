@@ -2,13 +2,13 @@
 title: "CMACC Insights"
 subtitle: "Analyzing Animal Shelter Data"
 author: "Victoria Pierce Crossland"
-format:
+format: 
   html:
+    self-contained: true
     theme: flatly
     toc: true
-    title-block-banner-color: '#536C7C'
-
-
+    title-block-banner: true
+    title-block-banner-color: '#7C959C'
 ---
 
 # About Me + Additional Context:
@@ -86,6 +86,7 @@ def scrape_dog_data():
     dogs_at_shelter = pd.DataFrame(all_dogs)
     dogs_at_shelter['Scrape Date'] = current_date
 
+
     csv_file = 'dogs_at_shelter.csv'
     if os.path.exists(csv_file):
         existing_data = pd.read_csv(csv_file)
@@ -122,7 +123,7 @@ dogs_at_shelter.head()
 
 ## Data Wrangling
 
-#### Age is in months and years. Create a numeric variable.
+##### Age is in months and years. Create a numeric variable.
 ```{python}
 
 def convert_age_to_years(age):
@@ -140,15 +141,6 @@ dogs_at_shelter['age_numeric'] = dogs_at_shelter['Age'].apply(convert_age_to_yea
 
 ```
 
-#### Filling in Age for dogs still on site (age did not come through previously due to human error - let's fix it)!
-```{python}
-#dogs_at_shelter['Age'] = dogs_at_shelter.groupby('Name')['Age'].transform(lambda x: x.ffill().bfill())
-#dogs_at_shelter['age_numeric'] = dogs_at_shelter.groupby('Name')['age_numeric'].transform(lambda x: x.ffill().bfill())
-
-# Saving the DataFrame to a CSV file
-
-
-```
 
 ##### Let's get Weight as a numeric variable!
 ```{python}
@@ -167,7 +159,9 @@ dogs_at_shelter['ID'] = dogs_at_shelter['Name_ID'].str.extract(r'(\d+)')  # Extr
 dogs_at_shelter.head()
 ```
 
-##### As a CMACC Volunteer, I have the inside scoop on what the locations mean. I know the DoginCare Unit is at the larger Byrum location, as well as the ADPTPUP (puppy kennels) and LST units (Dogs found as a stray & on a 3 day hold so owners have a chance to reclaim). The Toomey location is the satellite location. I want to create a new variable that simplifies this location.
+##### CMACC context: As a CMACC Volunteer, I have the inside scoop on what the locations mean. I know the DoginCare Unit is at the larger Byrum location, as well as the ADPTPUP (puppy kennels) and LST units (dogs found as a stray & on a 3 day hold so owners have a chance to reclaim). The Toomey location is the satellite location. I also want to seperate out the Kennel Location vs Kennel Number. Kennel Name corresponds to what hallway the dog is located on, while the Kennel Number is the refers to the location on the hallway. Kennels are numbered in ascending order. The Byrum location has a hallway with dogs on both sides, so I am also creating a variable that grabs the side of the kennel location. 
+
+##### Create new variables that simplifies and splits out location.
 
 ```{python}
 import numpy as np
@@ -180,121 +174,143 @@ dogs_at_shelter['location_simple'] = np.where(
         dogs_at_shelter['Kennel Location'].str.contains('Foster', case=False), 'Foster',
          dogs_at_shelter['Kennel Location'])))
 
-```
 
-##### I also want to seperate out the Kennel Location vs Kennel Number. Kennel Name corresponds to what hallway the dog is located on, while the Kennel Number is the refers to the location on the hallway. Kennels are numbered in ascending. The Byrum location has a hallway with dogs on both sides, so I am also creating a variable that grabs the side of the kennel location. 
-
-```{python}
-dogs_at_shelter['kennel_name'] = dogs_at_shelter['Kennel Location'].str.extract(r'([A-Za-z\s]+)')  # Extracts only the name part before the space and parenthesis
-dogs_at_shelter['kennel_num'] = dogs_at_shelter['Kennel Location'].str.extract(r'(\d+)')  # Extracts only the numeric part
+dogs_at_shelter['kennel_name'] = dogs_at_shelter['Kennel Location'].str.extract(r'([A-Za-z\s]+)')  # Extracts name/hallyway location
+dogs_at_shelter['kennel_num'] = dogs_at_shelter['Kennel Location'].str.extract(r'(\d+)')  # Extracts number
 dogs_at_shelter['side'] = dogs_at_shelter['Kennel Location'].apply(
     lambda x: '' if 'FOSTER' in x or x[-1] not in ['R', 'L'] else x[-1])
 
 
-
 ```
 
-##### Creating a Variable to count how long a dog has been in the shelter
+
+##### Create variable to count how long a dog has been in the shelter
 ```{python}
+
 dogs_at_shelter['Brought to Shelter'] = pd.to_datetime(dogs_at_shelter['Brought to Shelter'])
+dogs_at_shelter['Scrape Date'] = pd.to_datetime(dogs_at_shelter['Scrape Date'])
 
-# Calculate 'Days_at_shelter'
-today = pd.to_datetime('today')
-dogs_at_shelter['Days_at_shelter'] = (today - dogs_at_shelter['Brought to Shelter']).dt.days
 
-dogs_at_shelter
+dogs_at_shelter['Days_at_shelter'] = (dogs_at_shelter['Scrape Date'] - dogs_at_shelter['Brought to Shelter']).dt.days
 
+dogs_at_shelter.head()
 ```
+
+##### Drop columns not needed
+```{python}
+dogs_at_shelter = dogs_at_shelter.drop(columns=['Qualified For', 'Located At'])
+```
+
+
+
 ## Top Level Highlights for Today
-
-##### What is the smallest dog? The largest? 
-
 ```{python}
 from datetime import datetime
 
-
+# Today's date and current data filtering
 today_date = datetime.today().strftime('%Y-%m-%d')
 current_dogs = dogs_at_shelter[dogs_at_shelter['Scrape Date'] == today_date]
 
-# Srape runs at 1pm. If running before then, default to most recent date in Scrape Date.
 if current_dogs.empty:
-    # Find the maximum date in the 'Scrape Date' column if no entry for today
     max_date = dogs_at_shelter['Scrape Date'].max()
-    # Filter the DataFrame using the maximum date found
     current_dogs = dogs_at_shelter[dogs_at_shelter['Scrape Date'] == max_date]
 
 
-
 max_date = current_dogs['Scrape Date'].max()
-print("CMACC Highlights:", max_date)
 gender_counts = current_dogs['Gender'].value_counts()
-
 female_count = gender_counts.get('Female', 0)
-male_count = gender_counts.get('Male', 0) 
-percent_male = male_count/(male_count+female_count)
+male_count = gender_counts.get('Male', 0)
+percent_male = male_count / (male_count + female_count)
 
-
-
-
+# Smallest and largest dogs
 smallest_dog = current_dogs['Weight_num'].min()
 largest_dog = current_dogs['Weight_num'].max()
-print("Number of females:", female_count)
-print("Number of males:", male_count)
-print("{:.2f}%".format(percent_male * 100), "of dogs currently at the shelter are male")
-print("Smallest Dog:", smallest_dog, "pounds")
-print("Largest Dog:", largest_dog, "pounds")
 
-
-
+# Top breeds
 filtered_breeds = current_dogs[current_dogs['Breed'] != 'Breed information is not provided by this shelter']
 breed_counts = filtered_breeds['Breed'].value_counts().head(5)
-print("The 5 most found breeds currently at the shelter are:", breed_counts)
 
-
-
+# Location counts
 location_counts = current_dogs['location_simple'].value_counts()
-print(location_counts)
 
-
+# Sick dogs
 count_sick = current_dogs['Kennel Location'].str.contains('CARE').sum()
-print("There are", count_sick, "sick dogs in the Dogs In Care unit at Byrum.")
 
-
+# Longest stay dogs
 dogs_located_at_shelter = current_dogs[current_dogs['Kennel Location'].str.contains('CARE|LST|ADOPT|TOOM')]
 max_days_in_shelter = dogs_located_at_shelter['Days_at_shelter'].max()
-
 longest_stay_dogs = dogs_located_at_shelter[dogs_located_at_shelter['Days_at_shelter'] == max_days_in_shelter]
 
-# Print the name(s) of the dog(s) with the longest stay
-print(longest_stay_dogs['Name'].tolist(), "has been at the shelter the longest at", max_days_in_shelter, "days.")
+# Final output as a multi-line formatted string
+output = f"""
+### CMACC Highlights: {max_date.strftime('%Y-%m-%d')}
+
+**Number of females:** {female_count}  
+**Number of males:** {male_count}  
+**{percent_male:.2%}** of dogs currently at the shelter are male.  
+
+**Smallest Dog:** {smallest_dog} pounds  
+**Largest Dog:** {largest_dog} pounds  
+
+**The 5 most found breeds currently at the shelter are:**  
+- {breed_counts.index[0]}: {breed_counts.iloc[0]}  
+- {breed_counts.index[1]}: {breed_counts.iloc[1]}  
+- {breed_counts.index[2]}: {breed_counts.iloc[2]}  
+- {breed_counts.index[3]}: {breed_counts.iloc[3]}  
+- {breed_counts.index[4]}: {breed_counts.iloc[4]}  
+
+**Number of dogs by location:**  
+- **Foster:** {location_counts.get('Foster', 0)}  
+- **Byrum:** {location_counts.get('Byrum', 0)}  
+- **Toomey:** {location_counts.get('Toomey', 0)}  
+
+**There are {count_sick} sick dogs** in the Dogs In Care unit at Byrum.
+
+**The dog(s) with the longest stay:**  
+- {', '.join(longest_stay_dogs['Name'].tolist())} has been at the shelter the longest at **{max_days_in_shelter} days**.
+"""
+
+# Write the output as raw Markdown
+from IPython.display import display, Markdown
+display(Markdown(output))
 
 ```
-
+### Final DF
 ```{python}
+dogs_at_shelter.sample(10)
+
+```
+##### I now have a tidy df that will update daily with data from the shelter website.
+
+## EDA
+```{python}
+
 import matplotlib.pyplot as plt
 
 # Histogram of dog weights
 
-current_dogs['Weight_num'].plot(kind='hist', bins=10, edgecolor='black')
+current_dogs['Weight_num'].plot(kind='hist', bins=10, edgecolor='black', color= '#556C7C')
 plt.title('Distribution of Dog Weights Currently at Shelter')
 plt.xlabel('Weight (lbs)')
 plt.ylabel('Frequency')
+plt.figure(figsize=(8, 4))
 plt.tight_layout()
 plt.show()
 
 ```
-
+##### Generally an even weight distribution
 
 ```{python}
 import matplotlib.pyplot as plt
 
 # Histogram of dog ages
 
-current_dogs['age_numeric'].plot(kind='hist', bins=10, edgecolor='black')
+current_dogs['age_numeric'].plot(kind='hist', bins=10, edgecolor='black', color= '#556C7C')
 plt.title('Distribution of Dog Ages Currently at Shelter')
 plt.xlabel('Age (Years)')
 plt.ylabel('Frequency')
 plt.tight_layout()
+plt.figure(figsize=(8, 4))
 plt.show()
 
 #Generally right skewed: Many more young dogs compared to older. 
@@ -304,13 +320,16 @@ plt.show()
 import matplotlib.pyplot as plt
 
 # Plot 1: Bar chart: count of dogs by breed - top 5
-breed_counts.plot(kind='bar')
+breed_counts.plot(kind='bar', edgecolor='black', color= '#556C7C')
 plt.title('5 Most Common Dog Breeds Currently in Shelter')
 plt.xlabel('Breed')
 plt.ylabel('Count')
 plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
+plt.figure(figsize=(8, 4))
 plt.show()
+
+# We generally see a large majority of pitties and pit mixes
 ```
 
 
@@ -318,7 +337,11 @@ plt.show()
 import matplotlib.pyplot as plt
 
 top_breeds = breed_counts.index.tolist()  # Extract breed names for the top breeds
-filtered_counts = dogs_at_shelter[dogs_at_shelter['Breed'].isin(top_breeds)]
+
+# Keep only the latest record for each unique 'ID' to avoid duplicates
+unique_dogs = dogs_at_shelter.sort_values('Scrape Date').drop_duplicates(subset='ID', keep='last')
+
+filtered_counts = unique_dogs[unique_dogs['Breed'].isin(top_breeds)]
 gender_counts = filtered_counts.groupby(['Breed', 'Gender']).size().unstack(fill_value=0)
 
 # Ordering
@@ -326,10 +349,8 @@ gender_counts['Total'] = gender_counts.sum(axis=1)
 gender_counts = gender_counts.sort_values(by='Total', ascending=False).drop(columns=['Total'])
 
 
-
-
 # Plotting the data
-ax = gender_counts.plot(kind='bar', color={'Male': '#89CFF0', 'Female': 'pink'})
+ax = gender_counts.plot(kind='bar', color={'Male': '#78909C', 'Female': '#C79D9E'}, edgecolor='black')
 plt.title('Gender Split of Top 5 Dog Breeds in Shelter')
 plt.xlabel('Breed')
 plt.ylabel('Count')
@@ -338,8 +359,9 @@ plt.legend(title='Gender')
 plt.tight_layout()
 plt.show()
 
-```
+# More males than females typically
 
+```
 
 ### Shelter Capacity Concerns
 
@@ -349,24 +371,40 @@ plt.show()
 
 ```{python}
 
+dogs_at_shelter['Scrape Date'] = dogs_at_shelter['Scrape Date'].dt.strftime('%m/%d/%y')
+
 # Grouping by Date and Location and counting the number of dogs
 dogs_grouped = dogs_at_shelter.groupby(['Scrape Date', 'location_simple']).size().unstack(fill_value=0)
 
+# Rename index and columns for better readability
+dogs_grouped.index.name = 'Date'
+dogs_grouped.columns.name = 'Shelter Location'
+
+# Add a title and display as a styled table
+styled_table = dogs_grouped.style.set_caption("Daily Count of Dogs by Shelter Location").format("{:,.0f}").set_table_styles(
+    [{'selector': 'caption',
+      'props': [('font-size', '14px'), ('font-weight', 'bold'), ('text-align', 'center'), ('color', '#37474F')]}]
+).set_properties(**{'text-align': 'center'})
+
+# Display the styled table
+styled_table
+
+
+my_colors = ['#B0BEC5', '#607D8B', '#37474F']
+
 print(dogs_grouped)
 fig, ax = plt.subplots()
-dogs_grouped.plot(kind='bar', stacked=True, ax=ax)
+dogs_grouped.plot(kind='bar', stacked=True, ax=ax, edgecolor= 'black', color = my_colors)
 
-# Formatting the plot
-ax.set_title('Counts of Dogs by Location and Date', fontsize=14)
+
+
+# Plotting
+ax.set_title('Count of Dogs by Location and Date', fontsize=14)
 ax.set_xlabel('Date', fontsize=12)
 ax.set_ylabel('Number of Dogs', fontsize=12)
 ax.legend(title='Location', bbox_to_anchor=(1.05, 1), loc='upper left')
 ax.tick_params(axis='x', rotation=45)
-
-# Adjust layout for better display
 plt.tight_layout()
-
-# Show the plot
 plt.show()
 
 ```
@@ -382,10 +420,10 @@ dogs_grouped = at_shelter.groupby(['Scrape Date', 'location_simple']).size().uns
 # Show the resulting DataFrame
 print(dogs_grouped)
 
-
+my_colors = ['#B0BEC5', '#37474F']
 #Plot
 fig, ax = plt.subplots()
-dogs_grouped.plot(kind='bar', stacked=True, ax=ax)
+dogs_grouped.plot(kind='bar', stacked=True, ax=ax, color= my_colors, edgecolor= 'black')
 
 ax.set_title('Counts of Dogs by Location and Date', fontsize=14)
 ax.set_xlabel('Date', fontsize=12)
@@ -399,11 +437,9 @@ plt.show()
 
 ```
 
-## Send Myself A Warning Email if Capacity Gets Tight
+
+### Send Myself A Warning Email if Capacity Gets Tight
 #### Currenly, the Foster Coordinator sends out a plea to volunteers when the shelter is over capacity. Let's automate that.
-
-
-
 
 ```{python}
 import smtplib
@@ -457,3 +493,514 @@ else:
    # Above is commenting out the scheduling 
 ```
 
+
+
+### Visualizations
+```{python}
+#Create dataset of dogs that have been adopted
+
+# Function to determine the result
+def assign_result(row, all_days_df):
+    current_date = pd.to_datetime(row["Scrape Date"])
+    dog_id = row["ID"]
+
+    # Convert Scrape Date column to datetime for efficient filtering
+    all_days_df["Scrape Date"] = pd.to_datetime(all_days_df["Scrape Date"])
+    
+    # Determine if this is the most recent date in the dataset
+    most_recent_date = all_days_df["Scrape Date"].max()
+
+    # Check if the dog appears in any future data
+    is_in_next = all_days_df[
+        (all_days_df["Scrape Date"] > current_date) & (all_days_df["ID"] == dog_id)
+    ].shape[0] > 0
+
+    # Determine the result
+    if current_date == most_recent_date:
+        return "Looking for Furever Home"  # Default to Looking for Furever Home for the most recent date
+    elif not is_in_next:
+        return "Adopted"  # Not found in future dates -> Adopted
+    elif is_in_next:
+        return "Looking for Furever Home"  # Found in future dates
+
+
+
+# Apply the function to assign the result
+dogs_at_shelter["result"] = dogs_at_shelter.apply(assign_result, axis=1, all_days_df=dogs_at_shelter)
+```
+
+
+
+
+##### Adopted Dogs
+
+```{python}
+import matplotlib.pyplot as plt
+import pandas as pd
+
+
+adopted_dogs = dogs_at_shelter[dogs_at_shelter['result'] == 'Adopted']
+adopted_dogs = adopted_dogs.dropna(subset=['age_numeric', 'Weight_num'])
+
+# Calculate medians
+median_age = adopted_dogs['age_numeric'].median()
+median_weight = adopted_dogs['Weight_num'].median()
+
+# Styling the boxplots
+fig, axes = plt.subplots(1, 2, figsize=(12, 6), facecolor='white')
+plt.subplots_adjust(wspace=.3)  # Add more space between the two plots
+
+box_color = '#37474F'
+
+# Age Boxplot
+boxes_age = axes[0].boxplot(
+    adopted_dogs['age_numeric'], 
+    vert=True, 
+    patch_artist=True, 
+    boxprops=dict(facecolor=box_color, color=box_color),
+    whiskerprops=dict(color=box_color),
+    capprops=dict(color=box_color),
+    medianprops=dict(color='#7C959C', linewidth=3)
+)
+axes[0].set_title('Distribution of Age for Adopted Dogs', fontsize=14, fontweight='bold')
+axes[0].set_ylabel('Age (in years)', fontsize=12)
+axes[0].set_xticks([])  # Remove x-axis tick '1'
+
+# Weight Boxplot
+boxes_weight = axes[1].boxplot(
+    adopted_dogs['Weight_num'], 
+    vert=True, 
+    patch_artist=True, 
+    boxprops=dict(facecolor=box_color, color=box_color),
+    whiskerprops=dict(color=box_color),
+    capprops=dict(color=box_color),
+    medianprops=dict(color='#7C959C', linewidth=3)
+)
+axes[1].set_title('Distribution of Weight for Adopted Dogs', fontsize=14, fontweight='bold')
+axes[1].set_ylabel('Weight (in lbs)', fontsize=12)
+axes[1].set_xticks([])  # Remove x-axis tick '1'
+
+plt.figure(figsize=(8, 4))
+plt.tight_layout()
+plt.show()
+```
+##### This reflects what I would expect. The spread of weights and ages of adopted dogs is similar to the spreads of the general shelter population.
+
+
+
+```{python}
+import matplotlib.pyplot as plt
+
+# Ensure 'Days_at_shelter' is numeric
+adopted_dogs['Days_at_shelter'] = pd.to_numeric(adopted_dogs['Days_at_shelter'], errors='coerce')
+
+# Drop rows with missing 'Days_at_shelter'
+adopted_dogs = adopted_dogs.dropna(subset=['Days_at_shelter'])
+
+# Plot the histogram
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.hist(adopted_dogs['Days_at_shelter'], bins=15, color='#37474F', edgecolor='black', alpha=0.9)
+
+# Add title and labels
+ax.set_title('Distribution of Days in Shelter for Adopted Dogs', fontsize=14)
+ax.set_xlabel('Days in Shelter', fontsize=12)
+ax.set_ylabel('Count of Adopted Dogs', fontsize=12)
+
+# Customize grid and ticks
+#ax.grid(axis='y', linestyle='--', alpha=0.7)
+ax.tick_params(axis='x', rotation=0)
+
+# Add overall layout adjustment
+plt.tight_layout()
+plt.figure(figsize=(8, 4))
+# Display the plot
+plt.show()
+
+```
+
+###### The vast majority of dogs find their forever homes in hunder a month!
+
+##### Disclaimer: Data is still very small - this is the breakout for adoptions in the last 9 days.
+
+```{python}
+# Days in Shelter by Breed Boxplot
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+
+# Exclude 'Breed information is not provided by this shelter'
+filtered_dogs = adopted_dogs[
+    adopted_dogs['Breed'] != 'Breed information is not provided by this shelter']
+
+# Calculate median Days_at_shelter for each Breed and sort
+breed_order = (
+    filtered_dogs.groupby('Breed')['Days_at_shelter']
+    .median()
+    .sort_values(ascending=False)
+    .index)
+
+# Boxplot with all breeds ordered by median Days_at_shelter
+plt.figure(figsize=(12, 6))
+sns.boxplot(
+    x='Breed',
+    y='Days_at_shelter',
+    data=filtered_dogs,
+    order=breed_order,  # Order breeds by median Days_at_shelter
+    hue = 'Breed',
+    palette='muted')
+
+plt.title('Days in Shelter by Breed (Excluding Missing Breed Information)', fontsize=14, fontweight='bold')
+plt.xlabel('Breed', fontsize=12)
+plt.ylabel('Days in Shelter', fontsize=12)
+plt.xticks(rotation=45, ha='right')  # Rotate x-axis labels
+plt.tight_layout()
+plt.show()
+
+# Calculate the top 5 breeds excluding missing breed information
+top_breeds = (
+    filtered_dogs['Breed']
+    .value_counts()
+    .head(5)
+    .index
+)
+
+# Filter the data for the top 5 breeds
+filtered_top_breeds = filtered_dogs[filtered_dogs['Breed'].isin(top_breeds)]
+
+# Boxplot for the top 5 breeds
+plt.figure(figsize=(12, 6))
+sns.boxplot(
+    x='Breed',
+    y='Days_at_shelter',
+    data=filtered_top_breeds,
+    hue='Breed',
+    palette='muted'
+)
+plt.title('5 Most Frequent Shelter Breeds: Days Spent in Shelter', fontsize=14, fontweight='bold')
+plt.xlabel('Breed', fontsize=12)
+plt.ylabel('Days in Shelter', fontsize=12)
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+
+```
+
+
+
+##### Again, this will be more interesting once I have more data - Stay tuned! But as I have seen as a volunteer, pitties, german shephards, and huskys are typically overlooked (or not adopted due to breed restrictions) while more sought after "designer" breeds are adopted quickly. 
+
+
+```{python}
+# Filter for Sought After Breeds
+sought_after_breeds = adopted_dogs[
+    adopted_dogs['Breed'].str.contains(
+        r'Shih\s?Tzu|Chihuahua|Golden\s?Retriever|Rottweiler|Australian Terrier|Bully|Schipperke|Mastiff|Poodle|Pyrenees|Corso|Bulldog', 
+        case=False, na=False
+    )
+]
+
+# Filter for German Shepherd, Pit Bull, or Husky
+german_shep_pit_husky = adopted_dogs[
+    adopted_dogs['Breed'].str.contains(
+        r'German Shepherd|Pit Bull|Husky', 
+        case=False, na=False
+    )
+]
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(8, 4))
+
+# Define bins with 2-day increments
+bins = range(0, int(adopted_dogs['Days_at_shelter'].max()) + 2, 2)
+
+# Histogram for sought-after breeds
+plt.hist(
+    sought_after_breeds['Days_at_shelter'], 
+    bins=bins, 
+    alpha=0.6, 
+    label='Sought After Breeds', 
+    color='#42A5F5', 
+    edgecolor='black'
+)
+
+# Histogram for German Shepherd/Pit Bull/Husky
+plt.hist(
+    german_shep_pit_husky['Days_at_shelter'], 
+    bins=bins, 
+    alpha=0.4, 
+    label='German Shepherd, Pit Bull, Husky', 
+    color='#FF7043', 
+    edgecolor='black'
+)
+
+
+plt.title('Days in Shelter: Sought After Breeds vs. German Shepherd/Pit Bull/Husky', fontsize=14)
+plt.xlabel('Days at Shelter', fontsize=12)
+plt.ylabel('Number of Dogs', fontsize=12)
+plt.legend()
+
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.xlim(left=0)
+plt.tight_layout()
+plt.show()
+
+
+```
+
+
+
+##### CMACC Context: Fosters are able to provide more context & photos of the dog in a home environment as well as notes such as potty-trained, being dog-friendly or single dog only, temperment, energy level, etc. On the other hand, a lot of families come into the shelter and want to pick out a dog from the kennels.
+
+##### Are dogs adopted more quickly from foster or from a shelter location?
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+unique_dogs = dogs_at_shelter.sort_values('Scrape Date').drop_duplicates(subset='ID', keep='last')
+
+
+location_stats = unique_dogs.groupby('location_simple').agg(
+    total_dogs=('Name_ID', 'count'), 
+    adopted_dogs=('result', lambda x: (x == 'Adopted').sum()) 
+)
+
+
+location_stats['adoption_rate'] = location_stats['adopted_dogs'] / location_stats['total_dogs']
+
+location_stats = location_stats.reset_index()
+location_stats = location_stats.sort_values(by='adoption_rate', ascending=False).reset_index(drop=True)
+
+# Custom HEX color codes
+custom_colors = ['#37474F', '#546E7A', '#90A4AE'] 
+
+# Plot adoption rates
+plt.figure(figsize=(10, 6))
+sns.barplot(
+    x='location_simple', 
+    y='adoption_rate',
+    data=location_stats,
+    hue = 'location_simple',
+    palette=custom_colors[:len(location_stats)], 
+    edgecolor='black'
+)
+
+plt.title('Adoption Rate by Location', fontsize=14, fontweight='bold')
+plt.xlabel('Location', fontsize=12)
+plt.ylabel('Adoption Rate', fontsize=12)
+plt.xticks(rotation=45, ha='right')  
+
+plt.tight_layout()
+plt.show()
+
+```
+###### It does surprise me that Byrum has a higher adoption rate than Fosters!
+
+
+```{python}
+#Adoption Count by Day
+
+# Group by Scrape Date and count adoptions
+adoption_trends = unique_dogs[unique_dogs['result'] == 'Adopted']
+adoption_trends = adoption_trends.groupby('Scrape Date').size()
+
+# Plot 
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10, 6))
+adoption_trends.plot(kind='line', marker='o', color='#42A5F5')
+plt.title('Daily Adoption Count', fontsize=14, fontweight='bold')
+plt.xlabel('Date', fontsize=12)
+plt.ylabel('Number of Adoptions', fontsize=12)
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.figure(figsize=(8, 4))
+plt.tight_layout()
+plt.show()
+
+
+```
+
+
+
+
+```{python}
+#Age Distribition by Adoption Status
+
+import seaborn as sns
+
+plt.figure(figsize=(10, 6))
+sns.boxplot(x='result', y='age_numeric', data=unique_dogs, palette='muted')
+plt.title('Age Distribution by Adoption Status', fontsize=14, fontweight='bold')
+plt.xlabel('Adoption Status', fontsize=12)
+plt.ylabel('Age (years)', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+
+# While the median age is similar, the dogs still in need of homes has a much wider spread with more older adult dogs and senior still looking for homes.
+
+
+
+
+my_colors = {'Adopted': '#4D72B8', 'Looking for Furever Home': '#D48054'}
+
+plt.figure(figsize=(10, 6))
+sns.histplot(data=unique_dogs, x='Weight_num', hue='result', element='step', stat='density', common_norm=False, palette=my_colors, alpha=0.4)
+plt.title('Weight Distribution by Adoption Status', fontsize=14, fontweight='bold')
+plt.xlabel('Weight (lbs)', fontsize=12)
+plt.ylabel('Density', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+# Smaller dogs tend to see faster adoptions.
+
+```
+
+
+
+
+```{python}
+##Correlation Plot
+
+sns.pairplot(unique_dogs[['age_numeric', 'Weight_num', 'Days_at_shelter']], corner=True, diag_kind='kde')
+plt.suptitle('Correlation Between Age, Weight, and Days in Shelter', y=1.02, fontsize=14, fontweight='bold')
+plt.show()
+
+
+```
+
+
+```{python}
+#Age Group vs Adoption
+
+# Create age groups
+bins = [0, 1, 3,5,7,20]  # Bins: 0-1 (Puppies), 1-7 (Adults), 7+ (Seniors)
+labels = ['Puppy (0-1)', 'Young Adult (1-3)', 'Adult (3-5)' ,'Older Adult (5-7)' ,'Senior (7+)']
+unique_dogs['Age Group'] = pd.cut(unique_dogs['age_numeric'], bins=bins, labels=labels, right=False)
+
+# Calculate adoption rate by age group
+age_group_stats = unique_dogs.groupby('Age Group').agg(
+    total_dogs=('Name_ID', 'count'),
+    adopted_dogs=('result', lambda x: (x == 'Adopted').sum())
+)
+age_group_stats['adoption_rate'] = age_group_stats['adopted_dogs'] / age_group_stats['total_dogs']
+
+
+# Plot adoption rate by age group
+plt.figure(figsize=(8, 6))
+plt.bar(age_group_stats.index, age_group_stats['adoption_rate'], color='#546E7A', edgecolor='black')
+plt.title('Adoption Rate by Age Group', fontsize=14, fontweight='bold')
+plt.xlabel('Age Group', fontsize=12)
+plt.ylabel('Adoption Rate', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+```
+##### This shows a very clear trend of adoption rate decreasing with age of dog. Adopters typically lean towards younger dogs so they can enjoy more time with the dog (I mean, who can resist a puppy??) while older adults and seniors are browsed over. 
+
+```{python}
+age_group_stats
+```
+
+
+
+##### Next Step: Create an interactive dashboard in Looker where A) Volunteers can look at top level insights and B) A tool that will help Fosters and/or Potential Adopters choose a dog! 
+
+
+
+```{python}
+# Calculate adoption rate by gender
+gender_stats = unique_dogs.groupby('Gender').agg(
+    total_dogs=('ID', 'count'),
+    adopted_dogs=('result', lambda x: (x == 'Adopted').sum())
+)
+gender_stats['adoption_rate'] = gender_stats['adopted_dogs'] / gender_stats['total_dogs']
+
+# Plot adoption rates by gender
+plt.figure(figsize=(8, 6))
+sns.barplot(x=gender_stats.index, y=gender_stats['adoption_rate'], palette='Set2', edgecolor= 'black')
+plt.title('Adoption Rate by Gender', fontsize=14, fontweight='bold')
+plt.xlabel('Gender', fontsize=12)
+plt.ylabel('Adoption Rate', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+
+```
+###### Males are more common but females have a higher adoption rate.
+
+
+```{python}
+#Correlation plot
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(unique_dogs[['age_numeric', 'Weight_num', 'Days_at_shelter']].corr(), annot=True, cmap='coolwarm', fmt='.2f')
+plt.title('Correlation Heatmap (Unique Dogs)', fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.figure(figsize=(8, 4))
+plt.show()
+
+
+```
+
+
+
+##### Do dogs at the front get adopted quicker? Or do potential adopters seem to walk through all the kennels?
+```{python}
+# Kennel Number vs. Days in Shelter
+
+
+
+# Filter data for adopted dogs at Byrum and Toomey
+byrum_toomey_adopted = unique_dogs[
+    (unique_dogs['location_simple'].isin(['Byrum', 'Toomey'])) & 
+    (unique_dogs['result'] == 'Adopted')
+]
+
+# Convert kennel number to numeric for sorting
+byrum_toomey_adopted['kennel_num'] = pd.to_numeric(byrum_toomey_adopted['kennel_num'], errors='coerce')
+
+# Plot Kennel Number vs. Days in Shelter
+plt.figure(figsize=(10, 6))
+sns.lmplot(
+    x='kennel_num',
+    y='Days_at_shelter',
+    hue='location_simple',
+    data=byrum_toomey_adopted,
+    palette='Set2',
+    height=6, 
+    aspect=1.5,
+    scatter_kws={'s': 100, 'edgecolor': 'black'},  
+    line_kws={'linewidth': 2}  
+)
+
+plt.title('Days in Shelter vs. Kennel Number', fontsize=14, fontweight='bold')
+plt.xlabel('Kennel Number')
+plt.ylabel('Days in Shelter')
+plt.legend(title='Location')
+plt.tight_layout()
+plt.figure(figsize=(8, 4))
+plt.show()
+
+
+```
+###### No significant trends here (yet)! 
+
+```{python}
+# Pair plot for age, weight, and days in shelter
+sns.pairplot(
+    unique_dogs[['age_numeric', 'Weight_num', 'Days_at_shelter', 'result']], 
+    hue='result',
+    palette='husl',
+    corner=True,
+    plot_kws={'alpha': 0.7, 's': 70, 'edgecolor': 'black'}
+)
+plt.suptitle('Pair Plot of Numeric Variables by Adoption Status', y=1.02, fontsize=14, fontweight='bold')
+plt.figure(figsize=(8, 4))
+plt.show()
+
+```
+
+##### Excited to collect more data and continue diving in! Next step is to create a dashboard where volunteers can look at shelter stats, as well as a tool to help find your perfect furry friend/foster!
